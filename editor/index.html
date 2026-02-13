@@ -1,185 +1,414 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>GitHub Book Editor</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body {
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: #0f1115;
-      color: #e6e6e6;
-      margin: 0;
-      padding: 24px;
-    }
-    h1 { margin-top: 0; }
-    input, button, textarea {
-      font-size: 14px;
-      padding: 8px;
-      margin: 6px 0;
-      width: 100%;
-      max-width: 600px;
-    }
-    button {
-      cursor: pointer;
-      background: #3b82f6;
-      color: white;
-      border: none;
-      border-radius: 6px;
-    }
-    button.secondary {
-      background: #444;
-    }
-    textarea {
-      height: 300px;
-      background: #1a1d24;
-      color: #fff;
-      border: 1px solid #333;
-      border-radius: 6px;
-    }
-    .file-list button {
-      background: #222;
-      margin: 4px 0;
-      text-align: left;
-    }
-    .status {
-      margin-top: 10px;
-      color: #7dd3fc;
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#0f1115; color:#e7e7e7; }
+    header { padding: 14px 18px; border-bottom: 1px solid rgba(255,255,255,.10); display:flex; gap:12px; align-items:center; }
+    header h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing:.2px; }
+    .pill { font-size: 12px; padding: 2px 10px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; opacity: .9; }
+    .topright { margin-left:auto; display:flex; gap:10px; align-items:center; flex-wrap: wrap; justify-content:flex-end; }
+    .status { font-size: 12px; opacity: .85; }
+    .ok { color: #7CFFB2; }
+    .warn { color: #FFD27C; }
+    .err { color: #FF7C7C; }
+
+    main { display:grid; grid-template-columns: 340px 1fr; min-height: calc(100vh - 56px); }
+    aside { border-right: 1px solid rgba(255,255,255,.10); padding: 12px; overflow:auto; }
+    section { padding: 12px; overflow:auto; }
+
+    .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    label { display:block; font-size: 12px; opacity:.75; margin-top: 6px; }
+    input, textarea { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.03); color: inherit; }
+    textarea { min-height: 58vh; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; line-height: 1.35; resize: vertical; }
+
+    .btnRow { display:flex; gap:10px; flex-wrap: wrap; margin-top: 10px; }
+    button { border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.04); color: inherit; padding: 9px 12px; border-radius: 12px; cursor:pointer; }
+    button.primary { border-color: rgba(124,255,178,.45); }
+    button.danger { border-color: rgba(255,124,124,.45); }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+
+    .muted { font-size: 12px; opacity: .75; margin-top: 8px; }
+    .file { padding: 8px 10px; border-radius: 12px; cursor:pointer; border: 1px solid transparent; margin-bottom: 6px; }
+    .file:hover { border-color: rgba(255,255,255,.18); }
+    .file.active { border-color: rgba(124,255,178,.45); background: rgba(124,255,178,.06); }
+
+    .toolbar { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .small { font-size: 12px; opacity:.8; }
+    code { background: rgba(255,255,255,.06); padding: 2px 6px; border-radius: 8px; }
+
+    @media (max-width: 920px){
+      main { grid-template-columns: 1fr; }
+      aside { border-right: none; border-bottom: 1px solid rgba(255,255,255,.10); }
     }
   </style>
 </head>
 <body>
+<header>
+  <h1>GitHub Book Editor</h1>
+  <span class="pill" id="repoPill">repo: (not set)</span>
+  <div class="topright">
+    <span class="status" id="tokenStatus">Token: not set</span>
+    <button class="primary" id="setTokenBtn">Set GitHub Token</button>
+    <button class="danger" id="clearTokenBtn">Clear Token</button>
+  </div>
+</header>
 
-<h1>GitHub Book Editor</h1>
+<main>
+  <aside>
+    <div class="grid2">
+      <div>
+        <label for="owner">GitHub owner</label>
+        <input id="owner" placeholder="e.g. dragonking587-ai" />
+      </div>
+      <div>
+        <label for="repo">Repo</label>
+        <input id="repo" placeholder="e.g. my-magic-system" />
+      </div>
+    </div>
 
-<h3>Repository Settings</h3>
-<input id="owner" placeholder="GitHub owner (e.g. dragonking587-ai)" />
-<input id="repo" placeholder="Repository name (e.g. my-magic-system)" />
-<input id="branch" value="main" placeholder="Branch (main or draft)" />
-<input id="root" value="book" placeholder="Root folder (book)" />
+    <div class="grid2">
+      <div>
+        <label for="branch">Branch</label>
+        <input id="branch" value="main" />
+      </div>
+      <div>
+        <label for="rootFolder">Root folder</label>
+        <input id="rootFolder" value="book" />
+      </div>
+    </div>
 
-<button onclick="setToken()">Set GitHub Token</button>
-<button class="secondary" onclick="loadFiles()">Load Book Files</button>
+    <div class="btnRow">
+      <button class="primary" id="loadBtn">Load book files</button>
+      <button id="refreshBtn">Refresh list</button>
+    </div>
 
-<div class="status" id="status"></div>
+    <div class="muted" id="listHint">Files will appear here after loading.</div>
+    <div id="fileList" style="margin-top:10px;"></div>
+  </aside>
 
-<hr />
+  <section>
+    <div class="toolbar">
+      <div>
+        <label for="path">Selected file</label>
+        <input id="path" readonly />
+      </div>
+      <div>
+        <label for="message">Commit message</label>
+        <input id="message" value="Edit book content" />
+      </div>
+    </div>
 
-<div class="file-list" id="files"></div>
+    <label for="content">Content</label>
+    <textarea id="content" spellcheck="false"></textarea>
 
-<h3>Editor</h3>
-<textarea id="editor"></textarea>
-<button onclick="saveFile()">Save File</button>
+    <div class="btnRow">
+      <button class="primary" id="saveBtn" disabled>Save (commit)</button>
+      <button id="reloadBtn" disabled>Reload</button>
+    </div>
+
+    <div class="status" id="saveStatus"></div>
+    <div class="muted">
+      Notes:
+      <ul>
+        <li>Token is stored only in this browser (localStorage).</li>
+        <li>For safety, you can set <code>branch</code> to <code>draft</code> and merge later.</li>
+      </ul>
+    </div>
+  </section>
+</main>
 
 <script>
-  const TOKEN_KEY = "gh_editor_token_v1";
-  let currentPath = null;
+(function(){
+  // ----------------------------
+  // State + helpers
+  // ----------------------------
+  var TOKEN_KEY = "gh_editor_token_v1";
+  var STATE_KEY = "gh_editor_state_v2";
 
-  function setStatus(msg) {
-    document.getElementById("status").textContent = msg;
+  function $(id){ return document.getElementById(id); }
+
+  function setSaveStatus(msg, cls){
+    var el = $("saveStatus");
+    el.textContent = msg || "";
+    el.className = "status " + (cls || "");
   }
 
-  function setToken() {
-    const token = prompt("Paste your GitHub fine-grained token:");
-    if (!token) {
-      alert("Token not set.");
-      return;
-    }
-    localStorage.setItem(TOKEN_KEY, token.trim());
-    alert("GitHub token saved.");
+  function setListHint(msg){
+    $("listHint").textContent = msg;
   }
 
-  function getToken() {
-    return localStorage.getItem(TOKEN_KEY);
+  function setRepoPill(){
+    var st = loadState();
+    var owner = st.owner || "";
+    var repo = st.repo || "";
+    $("repoPill").textContent = "repo: " + (owner && repo ? (owner + "/" + repo) : "(not set)");
   }
 
-  async function githubRequest(url, options = {}) {
-    const token = getToken();
-    if (!token) {
+  function getToken(){ return localStorage.getItem(TOKEN_KEY) || ""; }
+  function setToken(t){
+    if (t) localStorage.setItem(TOKEN_KEY, t);
+    else localStorage.removeItem(TOKEN_KEY);
+    updateTokenUI();
+  }
+
+  function updateTokenUI(){
+    var t = getToken();
+    $("tokenStatus").textContent = t ? "Token: set" : "Token: not set";
+    $("tokenStatus").className = "status " + (t ? "ok" : "warn");
+  }
+
+  function saveState(obj){
+    localStorage.setItem(STATE_KEY, JSON.stringify(obj));
+    setRepoPill();
+  }
+
+  function loadState(){
+    try { return JSON.parse(localStorage.getItem(STATE_KEY) || "{}"); }
+    catch(e){ return {}; }
+  }
+
+  function b64EncodeUtf8(str){
+    // UTF-8 safe base64
+    return btoa(unescape(encodeURIComponent(str)));
+  }
+  function b64DecodeUtf8(b64){
+    return decodeURIComponent(escape(atob(b64)));
+  }
+
+  // ----------------------------
+  // GitHub API wrapper
+  // ----------------------------
+  function ghFetch(url, options){
+    var token = getToken();
+    if (!token){
       alert("Set GitHub token first.");
       throw new Error("No token");
     }
-    return fetch(url, {
-      ...options,
-      headers: {
-        "Authorization": "Bearer " + token,
-        "Accept": "application/vnd.github+json",
-        ...(options.headers || {})
-      }
+    options = options || {};
+    options.headers = options.headers || {};
+    options.headers["Authorization"] = "Bearer " + token;
+    options.headers["Accept"] = "application/vnd.github+json";
+    if (options.body && !options.headers["Content-Type"]){
+      options.headers["Content-Type"] = "application/json";
+    }
+    return fetch(url, options).then(function(res){
+      return res.text().then(function(text){
+        var data = null;
+        try { data = text ? JSON.parse(text) : null; } catch(e){ data = text; }
+        if (!res.ok){
+          var msg = (data && data.message) ? data.message : (typeof data === "string" ? data : "Request failed");
+          throw new Error(res.status + " " + res.statusText + ": " + msg);
+        }
+        return data;
+      });
     });
   }
 
-  async function loadFiles() {
-    const owner = owner.value.trim();
-    const repo = repo.value.trim();
-    const branch = branch.value.trim();
-    const root = document.getElementById("root").value.trim();
+  // ----------------------------
+  // UI state
+  // ----------------------------
+  var currentPath = null;
+  var currentSha = null;
 
-    setStatus("Loading files...");
-    files.innerHTML = "";
-
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${root}?ref=${branch}`;
-    const res = await githubRequest(url);
-    const data = await res.json();
-
-    for (const item of data) {
-      if (item.type === "dir") {
-        loadDir(item.path, owner, repo, branch);
-      }
-    }
-    setStatus("Files loaded.");
+  function readInputs(){
+    var ownerVal = $("owner").value.trim();
+    var repoVal = $("repo").value.trim();
+    var branchVal = $("branch").value.trim() || "main";
+    var rootVal = $("rootFolder").value.trim() || "book";
+    return { owner: ownerVal, repo: repoVal, branch: branchVal, root: rootVal };
   }
 
-  async function loadDir(path, owner, repo, branch) {
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
-    const res = await githubRequest(url);
-    const items = await res.json();
+  function persistInputs(){
+    var v = readInputs();
+    saveState(v);
+  }
 
-    for (const item of items) {
-      if (item.type === "file" && item.name.endsWith(".md")) {
-        const btn = document.createElement("button");
-        btn.textContent = item.path;
-        btn.onclick = () => openFile(item);
-        files.appendChild(btn);
-      }
+  function setActiveFile(path){
+    var nodes = $("fileList").querySelectorAll(".file");
+    for (var i=0;i<nodes.length;i++){
+      nodes[i].classList.toggle("active", nodes[i].getAttribute("data-path") === path);
     }
   }
 
-  async function openFile(file) {
-    currentPath = file.path;
-    const res = await githubRequest(file.url);
-    const data = await res.json();
-    editor.value = atob(data.content);
-    setStatus("Editing: " + currentPath);
+  function setEditorEnabled(enabled){
+    $("saveBtn").disabled = !enabled;
+    $("reloadBtn").disabled = !enabled;
   }
 
-  async function saveFile() {
-    if (!currentPath) {
-      alert("No file open.");
+  // ----------------------------
+  // Load list using git tree (recursive) - fast and reliable
+  // ----------------------------
+  function loadBookFiles(){
+    var v = readInputs();
+    if (!v.owner || !v.repo){
+      alert("Set owner and repo first.");
       return;
     }
+    persistInputs();
+    setSaveStatus("Loading file list...", "");
+    setListHint("Loading...");
+    $("fileList").innerHTML = "";
 
-    const owner = owner.value.trim();
-    const repo = repo.value.trim();
-    const branch = branch.value.trim();
-    const content = btoa(unescape(encodeURIComponent(editor.value)));
+    var treeUrl = "https://api.github.com/repos/" + encodeURIComponent(v.owner) + "/" + encodeURIComponent(v.repo) +
+                  "/git/trees/" + encodeURIComponent(v.branch) + "?recursive=1";
 
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${currentPath}`;
-    const res = await githubRequest(url);
-    const data = await res.json();
+    ghFetch(treeUrl).then(function(tree){
+      var items = (tree.tree || []);
+      var prefix = v.root.replace(/\/+$/,"") + "/";
+      var paths = [];
+      for (var i=0;i<items.length;i++){
+        var x = items[i];
+        if (x.type === "blob" && x.path.indexOf(prefix) === 0 && x.path.slice(-3).toLowerCase() === ".md"){
+          paths.push(x.path);
+        }
+      }
+      paths.sort(function(a,b){
+        return a.localeCompare(b, undefined, {numeric:true, sensitivity:"base"});
+      });
 
-    await githubRequest(url, {
-      method: "PUT",
-      body: JSON.stringify({
-        message: "Edit " + currentPath,
-        content: content,
-        sha: data.sha,
-        branch: branch
-      })
+      if (!paths.length){
+        setSaveStatus("No .md files found under " + v.root + "/ (check Root folder & Branch).", "err");
+        setListHint("No files found.");
+        return;
+      }
+
+      var frag = document.createDocumentFragment();
+      for (var j=0;j<paths.length;j++){
+        (function(path){
+          var div = document.createElement("div");
+          div.className = "file";
+          div.setAttribute("data-path", path);
+          div.textContent = path;
+          div.onclick = function(){ openFile(path); };
+          frag.appendChild(div);
+        })(paths[j]);
+      }
+      $("fileList").appendChild(frag);
+      setSaveStatus("Loaded " + paths.length + " files. Click one to edit.", "ok");
+      setListHint("Click a file to load it.");
+    }).catch(function(e){
+      setSaveStatus(e.message, "err");
+      setListHint("Error loading list.");
     });
-
-    setStatus("Saved: " + currentPath);
   }
+
+  // ----------------------------
+  // Load a file
+  // ----------------------------
+  function openFile(path){
+    var v = readInputs();
+    if (!v.owner || !v.repo){ alert("Set owner + repo first."); return; }
+    persistInputs();
+
+    setSaveStatus("Loading " + path + "...", "");
+    currentPath = path;
+    currentSha = null;
+    setActiveFile(path);
+    $("path").value = path;
+    setEditorEnabled(false);
+
+    var url = "https://api.github.com/repos/" + encodeURIComponent(v.owner) + "/" + encodeURIComponent(v.repo) +
+              "/contents/" + encodeURIComponent(path) + "?ref=" + encodeURIComponent(v.branch);
+
+    ghFetch(url).then(function(data){
+      currentSha = data.sha;
+      var contentB64 = (data.content || "").replace(/\n/g, "");
+      $("content").value = b64DecodeUtf8(contentB64);
+      setEditorEnabled(true);
+      setSaveStatus("Loaded. Edit and click Save.", "ok");
+    }).catch(function(e){
+      setSaveStatus(e.message, "err");
+    });
+  }
+
+  // ----------------------------
+  // Reload current file
+  // ----------------------------
+  function reloadCurrent(){
+    if (!currentPath){ return; }
+    openFile(currentPath);
+  }
+
+  // ----------------------------
+  // Save (commit) current file
+  // ----------------------------
+  function saveCurrent(){
+    var v = readInputs();
+    if (!currentPath){
+      alert("Pick a file first.");
+      return;
+    }
+    persistInputs();
+
+    var msg = $("message").value.trim() || ("Edit " + currentPath);
+    var body = $("content").value;
+    var contentB64 = b64EncodeUtf8(body);
+
+    setSaveStatus("Saving...", "");
+    var putUrl = "https://api.github.com/repos/" + encodeURIComponent(v.owner) + "/" + encodeURIComponent(v.repo) +
+                 "/contents/" + encodeURIComponent(currentPath);
+
+    // Ensure we have latest sha (in case user loaded earlier)
+    var getUrl = putUrl + "?ref=" + encodeURIComponent(v.branch);
+
+    ghFetch(getUrl).then(function(data){
+      var sha = data.sha || currentSha;
+      var payload = {
+        message: msg,
+        content: contentB64,
+        sha: sha,
+        branch: v.branch
+      };
+      return ghFetch(putUrl, { method: "PUT", body: JSON.stringify(payload) });
+    }).then(function(resp){
+      if (resp && resp.content && resp.content.sha){
+        currentSha = resp.content.sha;
+      }
+      setSaveStatus("Saved ✅ Commit created on " + v.branch + ".", "ok");
+    }).catch(function(e){
+      setSaveStatus(e.message, "err");
+    });
+  }
+
+  // ----------------------------
+  // Token UI handlers
+  // ----------------------------
+  function promptForToken(){
+    var existing = getToken() || "";
+    var t = prompt("Paste your GitHub fine-grained token (Contents: Read & Write for this repo):", existing);
+    if (t === null) return;
+    t = (t || "").trim();
+    setToken(t);
+    if (t) setSaveStatus("Token saved locally. Now click 'Load book files'.", "ok");
+    else setSaveStatus("Token cleared.", "warn");
+  }
+
+  // ----------------------------
+  // Wire up
+  // ----------------------------
+  $("setTokenBtn").addEventListener("click", promptForToken);
+  $("clearTokenBtn").addEventListener("click", function(){ setToken(""); setSaveStatus("Token cleared.", "warn"); });
+  $("loadBtn").addEventListener("click", loadBookFiles);
+  $("refreshBtn").addEventListener("click", loadBookFiles);
+  $("saveBtn").addEventListener("click", saveCurrent);
+  $("reloadBtn").addEventListener("click", reloadCurrent);
+
+  // Restore saved inputs
+  var st = loadState();
+  if (st.owner) $("owner").value = st.owner;
+  if (st.repo) $("repo").value = st.repo;
+  if (st.branch) $("branch").value = st.branch;
+  if (st.root) $("rootFolder").value = st.root;
+
+  setRepoPill();
+  updateTokenUI();
+  setEditorEnabled(false);
+  setSaveStatus("Set token, then load book files.", "warn");
+})();
 </script>
 
 </body>
