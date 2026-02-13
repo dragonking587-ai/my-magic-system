@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GitHub Book Editor</title>
+  <style>
+    :root { color-scheme: dark light; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    header { padding: 14px 18px; border-bottom: 1px solid rgba(127,127,127,.35); display:flex; gap:12px; align-items:center; }
+    header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+    main { display: grid; grid-template-columns: 320px 1fr; min-height: calc(100vh - 56px); }
+    aside { border-right: 1px solid rgba(127,127,127,.35); padding: 12px; overflow:auto; }
+    section { padding: 12px; overflow:auto; }
+    .btn { border: 1px solid rgba(127,127,127,.5); background: transparent; padding: 8px 10px; border-radius: 10px; cursor:pointer; }
+    .btn.primary { border-color: rgba(127,127,127,.65); }
+    reminded { opacity:.8; font-size: 12px; }
+    input, textarea, select { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 10px; border: 1px solid rgba(127,127,127,.45); background: transparent; color: inherit; }
+    textarea { min-height: 58vh; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; line-height: 1.35; }
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .muted { opacity: .75; font-size: 12px; }
+    .file { padding: 8px 10px; border-radius: 10px; cursor:pointer; border: 1px solid transparent; }
+    .file:hover { border-color: rgba(127,127,127,.35); }
+    .file.active { border-color: rgba(127,127,127,.65); }
+    .pill { display:inline-block; font-size: 12px; padding: 2px 8px; border: 1px solid rgba(127,127,127,.45); border-radius: 999px; opacity: .85; }
+    .topright { margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap: wrap; justify-content:flex-end; }
+    .status { font-size: 12px; opacity: .8; }
+    .danger { color: #ff8080; }
+    .ok { color: #80ffb0; }
+    .hidden { display:none !important; }
+    @media (max-width: 900px){
+      main { grid-template-columns: 1fr; }
+      aside { border-right: none; border-bottom: 1px solid rgba(127,127,127,.35); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>GitHub Book Editor</h1>
+    <span class="pill" id="repoPill">repo: (not set)</span>
+    <div class="topright">
+      <span class="status" id="authStatus">Not signed in</span>
+      <button class="btn primary" id="signinBtn">Set GitHub Token</button>
+      <button class="btn" id="signoutBtn" class="hidden">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <aside>
+      <div class="row">
+        <div>
+          <label class="muted">GitHub owner</label>
+          <input id="owner" placeholder="e.g. RyanNelson" />
+        </div>
+        <div>
+          <label class="muted">Repo</label>
+          <input id="repo" placeholder="e.g. my-magic-system" />
+        </div>
+      </div>
+
+      <div style="height:10px"></div>
+
+      <div class="row">
+        <div>
+          <label class="muted">Branch</label>
+          <input id="branch" value="main" />
+        </div>
+        <div>
+          <label class="muted">Root folder</label>
+          <input id="rootFolder" value="book" />
+        </div>
+      </div>
+
+      <div style="height:10px"></div>
+
+      <button class="btn" id="loadBtn">Load book files</button>
+      <div style="height:12px"></div>
+
+      <div class="muted">Files</div>
+      <div id="fileList" style="margin-top:8px;"></div>
+    </aside>
+
+    <section>
+      <div id="editorPane" class="hidden">
+        <div class="row">
+          <div>
+            <label class="muted">Selected file</label>
+            <input id="path" readonly />
+          </div>
+          <div>
+            <label class="muted">Commit message</label>
+            <input id="message" value="Edit book content" />
+          </div>
+        </div>
+
+        <div style="height:10px"></div>
+
+        <label class="muted">Content</label>
+        <textarea id="content" spellcheck="false"></textarea>
+
+        <div style="height:10px"></div>
+
+        <div class="row">
+          <button class="btn primary" id="saveBtn">Save (commit to GitHub)</button>
+          <button class="btn" id="reloadBtn">Reload from GitHub</button>
+        </div>
+
+        <div style="height:10px"></div>
+        <div class="status" id="saveStatus"></div>
+        <div class="muted">
+          Tip: This editor commits directly to your repo using GitHub OAuth (PKCE). No Netlify, no servers.
+        </div>
+      </div>
+
+      <div id="welcome">
+        <h2 style="margin-top:0;">Setup</h2>
+        <ol>
+          <li>Set <strong>owner</strong>, <strong>repo</strong>, and <strong>branch</strong> (usually <code>main</code>).</li>
+          <li>Click <strong>Set GitHub Token</strong>.</li>
+          <li>Click <strong>Load book files</strong>, then pick a chapter/part file.</li>
+          <li>Edit → <strong>Save</strong> to commit.</li>
+        </ol>
+        <p class="muted">Open <code>GITHUB_ONLY_TOKEN_SETUP.md</code> in the repo for exact steps on creating a fine‑grained token.</p>
+      </div>
+    </section>
+  </main>
+
+<script>
+/**
+ * Minimal GitHub-only editor using OAuth PKCE + GitHub REST APIs.
+ * - Lists files under root folder via git trees (recursive)
+ * - Loads and edits markdown files
+ * - Saves via "create or update file contents" endpoint
+ */
+
+const qs = new URLSearchParams(location.search);
+const $ = (id) => document.getElementById(id);
+
+const stateKey = "gh_editor_state_v1";
+const tokenKey = "gh_editor_token_v1";
+
+function setStatus(msg, cls=""){
+  const el = $("saveStatus");
+  el.textContent = msg;
+  el.className = "status " + cls;
+}
+
+function b64encode(str){
+  return btoa(unescape(encodeURIComponent(str)));
+}
+function b64decode(b64){
+  return decodeURIComponent(escape(atob(b64)));
+}
+
+function randomString(len=64){
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
+  let out = "";
+  const arr = new Uint8Array(len);
+  crypto.getRandomValues(arr);
+  for (let i=0;i<len;i++) out += chars[arr[i] % chars.length];
+  return out;
+}
+async function sha256base64url(input){
+  const enc = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest("SHA-256", enc);
+  const bytes = Array.from(new Uint8Array(digest));
+  const b64 = btoa(String.fromCharCode(...bytes));
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function saveLocalState(obj){
+  localStorage.setItem(stateKey, JSON.stringify(obj));
+  updateRepoPill();
+}
+function loadLocalState(){
+  try { return JSON.parse(localStorage.getItem(stateKey) || "{}"); } catch { return {}; }
+}
+function getToken(){
+  return localStorage.getItem(tokenKey);
+}
+function setToken(t){
+  if (t) localStorage.setItem(tokenKey, t);
+  else localStorage.removeItem(tokenKey);
+  updateAuthUI();
+}
+function updateRepoPill(){
+  const st = loadLocalState();
+  const owner = st.owner || "";
+  const repo = st.repo || "";
+  $("repoPill").textContent = "repo: " + (owner && repo ? `${owner}/${repo}` : "(not set)");
+}
+function updateAuthUI(){
+  const t = getToken();
+  $("authStatus").textContent = t ? "Token set" : "Not signed in";
+  $("signinBtn").classList.toggle("hidden", !!t);
+  $("signoutBtn").classList.toggle("hidden", !t);
+}
+
+async function ghFetch(url, options={}){
+  const t = getToken();
+  const headers = Object.assign({
+    "Accept": "application/vnd.github+json"
+  }, options.headers || {});
+  if (t) headers["Authorization"] = "Bearer " + t;
+  if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const res = await fetch(url, Object.assign({}, options, {headers}));
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!res.ok){
+    const msg = (data && data.message) ? data.message : (typeof data === "string" ? data : "Request failed");
+    throw new Error(`${res.status} ${res.statusText}: ${msg}`);
+  }
+  return data;
+}
+
+async function signIn(){
+  const existing = getToken() || "";
+  const token = prompt("Paste a GitHub Fine-grained Personal Access Token (PAT).
+
+It should have Contents: Read & Write for this repo.
+
+Token is stored locally in your browser (localStorage).", existing);
+  if (token === null) return;
+  const trimmed = token.trim();
+  if (!trimmed){
+    setToken(null);
+    return;
+  }
+  setToken(trimmed);
+  setStatus("Token saved locally. Now click 'Load book files'.", "ok");
+}
+
+async function loadFiles(){
+  const st = loadLocalState();
+  const owner = $("owner").value.trim() || st.owner;
+  const repo = $("repo").value.trim() || st.repo;
+  const branch = $("branch").value.trim() || st.branch || "main";
+  const rootFolder = $("rootFolder").value.trim() || st.rootFolder || "book";
+  if (!owner || !repo){ alert("Set owner + repo first."); return; }
+  saveLocalState({owner, repo, branch, rootFolder});
+  updateRepoPill();
+
+  setStatus("Loading file list…");
+  $("fileList").innerHTML = "";
+
+  // Get git tree recursively
+  const tree = await ghFetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
+  const items = (tree.tree || [])
+    .filter(x => x.type === "blob" && x.path.startsWith(rootFolder + "/") && x.path.endsWith(".md"))
+    .map(x => x.path)
+    .sort((a,b) => a.localeCompare(b, undefined, {numeric:true, sensitivity:"base"}));
+
+  if (!items.length){
+    setStatus("No .md files found under " + rootFolder + "/ (check branch + folder).", "danger");
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const p of items){
+    const div = document.createElement("div");
+    div.className = "file";
+    div.textContent = p;
+    div.onclick = () => selectFile(p);
+    frag.appendChild(div);
+  }
+  $("fileList").appendChild(frag);
+  setStatus(`Loaded ${items.length} files. Pick one to edit.`, "ok");
+}
+
+let currentSha = null;
+let currentPath = null;
+
+function setActiveFile(path){
+  const nodes = $("fileList").querySelectorAll(".file");
+  nodes.forEach(n => n.classList.toggle("active", n.textContent === path));
+}
+
+async function selectFile(path){
+  try{
+    const st = loadLocalState();
+    const owner = st.owner, repo = st.repo, branch = st.branch || "main";
+    if (!getToken()){
+      alert("Sign in first.");
+      return;
+    }
+    setStatus("Loading file…");
+    currentPath = path;
+    setActiveFile(path);
+    $("path").value = path;
+
+    const data = await ghFetch(`https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(branch)}`);
+    currentSha = data.sha;
+    const content = b64decode((data.content || "").replace(/\n/g, ""));
+    $("content").value = content;
+
+    $("welcome").classList.add("hidden");
+    $("editorPane").classList.remove("hidden");
+    setStatus("Loaded. Edit and save when ready.", "ok");
+  } catch (e){
+    setStatus(e.message, "danger");
+  }
+}
+
+async function reloadCurrent(){
+  if (!currentPath) return;
+  await selectFile(currentPath);
+}
+
+async function saveCurrent(){
+  try{
+    if (!currentPath) { alert("Pick a file first."); return; }
+    const st = loadLocalState();
+    const owner = st.owner, repo = st.repo, branch = st.branch || "main";
+    const msg = $("message").value.trim() || "Edit book content";
+    const body = $("content").value;
+
+    setStatus("Saving…");
+
+    const payload = {
+      message: msg,
+      content: b64encode(body),
+      sha: currentSha,
+      branch: branch
+    };
+
+    const resp = await ghFetch(`https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(currentPath)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    });
+
+    currentSha = resp.content && resp.content.sha ? resp.content.sha : currentSha;
+    setStatus("Saved ✅ Commit created on " + branch + ".", "ok");
+  } catch (e){
+    setStatus(e.message, "danger");
+  }
+}
+
+$("signinBtn").addEventListener("click", signIn);
+$("signoutBtn").addEventListener("click", () => setToken(null));
+$("loadBtn").addEventListener("click", loadFiles);
+$("saveBtn").addEventListener("click", saveCurrent);
+$("reloadBtn").addEventListener("click", reloadCurrent);
+
+// restore inputs
+const st = loadLocalState();
+if (st.owner) $("owner").value = st.owner;
+if (st.repo) $("repo").value = st.repo;
+if (st.branch) $("branch").value = st.branch;
+if (st.rootFolder) $("rootFolder").value = st.rootFolder;
+updateRepoPill();
+updateAuthUI();
+</script>
+
+</body>
+</html>

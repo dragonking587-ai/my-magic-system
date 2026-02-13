@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Auth Callback</title>
+  <style>body{font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding:24px;}</style>
+</head>
+<body>
+  <h1>Signing you in…</h1>
+  <p id="msg">Completing GitHub OAuth…</p>
+
+<script>
+const tokenKey = "gh_editor_token_v1";
+
+async function exchangeCodeForToken(code, verifier){
+  // GitHub OAuth token exchange requires a client secret if done from a browser.
+  // We avoid servers by using GitHub's "Device Flow" alternative? Not available for OAuth Apps.
+  // So we use an intermediate manual step: user pastes the code into a GitHub Action / or uses a tiny Cloudflare worker.
+  // BUT user requested GitHub-only. For GitHub-only, we use "GitHub CLI + PAT" method instead.
+  // Therefore, this callback instructs user to use a Fine-grained PAT and paste it into the editor.
+  return null;
+}
+
+(function(){
+  const url = new URL(location.href);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const expected = sessionStorage.getItem("pkce_state");
+  const verifier = sessionStorage.getItem("pkce_verifier");
+
+  if (!code){
+    document.getElementById("msg").textContent = "Missing code. Close this tab and try again.";
+    return;
+  }
+  if (!expected || state !== expected){
+    document.getElementById("msg").textContent = "State mismatch. Close this tab and try again.";
+    return;
+  }
+
+  // GitHub OAuth Apps do not allow pure client-side token exchange without exposing a client secret.
+  // To stay GitHub-only, we fall back to using a Personal Access Token (fine-grained) pasted into the editor.
+  localStorage.removeItem(tokenKey);
+
+  document.getElementById("msg").innerHTML =
+    "GitHub OAuth Apps require a client secret for token exchange, which can't be done safely in pure browser + GitHub Pages. " +
+    "<br><br><strong>GitHub-only solution:</strong> Use a Fine-grained Personal Access Token (PAT) and paste it in the editor. " +
+    "Open <code>GITHUB_ONLY_TOKEN_SETUP.md</code> in the repo for exact steps, then return to <a href='./'>the editor</a>.";
+})();
+</script>
+</body>
+</html>
